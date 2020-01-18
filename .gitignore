@@ -1,0 +1,8 @@
+venv/
+.idea/
+dist/
+res/
+container_res/
+.env
+!contrib/docker/.env
+__pycache__
