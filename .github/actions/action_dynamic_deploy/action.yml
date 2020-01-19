@@ -1,0 +1,10 @@
+name: "Dynamic Deploy"
+description: "Custom action that pushes to our custom dynamic deployment."
+outputs:
+  success:
+    description: "Successful deploy"
+runs:
+  using: 'docker'
+  image: 'docker://ubuntu:18.04'
+  entrypoint: ./action_entrypoint.sh
+
