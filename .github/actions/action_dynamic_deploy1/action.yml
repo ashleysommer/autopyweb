@@ -1,4 +1,4 @@
-name: "Dynamic Deploy"
+name: "Dynamic Deploy1"
 description: "Custom action that pushes to our custom dynamic deployment."
 outputs:
   success:
@@ -6,5 +6,5 @@ outputs:
 runs:
   using: 'docker'
   image: 'docker://ubuntu:18.04'
-  entrypoint: "/github/workspace/.github/actions/action_dynamic_deploy/action_entrypoint.sh"
+  entrypoint: "/github/workspace/.github/actions/action_dynamic_deploy1/action_entrypoint.sh"
 
