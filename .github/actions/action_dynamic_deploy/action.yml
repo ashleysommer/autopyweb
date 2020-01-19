@@ -6,5 +6,5 @@ outputs:
 runs:
   using: 'docker'
   image: 'docker://ubuntu:18.04'
-  entrypoint: ./action_entrypoint.sh
+  entrypoint: "/github/workspace/.github/actions/action_dynamic_deploy/action_entrypoint.sh"
 
