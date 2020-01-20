@@ -22,12 +22,13 @@ async function main(argv) {
         }
     };
     try {
+      let deploy_post_endpoint = deploy_endpoint + "/event";
       let config = {
         headers: {
           'Content-Type': 'application/json;charset=utf-8'
         }
       };
-      let resp = axios.post(deploy_endpoint, payload, config);
+      let resp = await axios.post(deploy_post_endpoint, payload, config);
       let { data } = resp.data;
       console.log("response: "+data)
     } catch(error) {
