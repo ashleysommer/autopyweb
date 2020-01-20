@@ -3,29 +3,34 @@ const github = require('@actions/github');
 const fs = require('fs');
 const axios = require('axios');
 
-(function(){
+async function main() {
     console.log(arguments);
-    console.log("working in: "+__dirname);
+    console.log();
+    console.log("working in: " + __dirname);
 
-    const eventFilePath = __dirname + "/../test.txt";
-    fs.readFile(eventFilePath, function(err, fileData) {
-        if (err) {
-            throw err;
+    const event = JSON.parse(fs.readFileSync('/github/workflow/event.json', 'utf8'));
+    let config = {
+        headers: {
+            'Content-Type': 'application/json;charset=utf-8'
         }
+    };
 
-        let config = {
-            headers: {
-                'Content-Type': 'application/json;charset=utf-8'
-            }
-        };
-
-        axios.post(fileData, config).then((res) => {
-            console.log("Response: ", res);
-        }).catch((err) => {
-            console.log("error: ", err);
-        })
+    axios.post("http://example.org", event, config).then((res) => {
+        console.log("Response: ", res);
+    }).catch((err) => {
+        console.log("error: ", err);
     });
-})();
-
-
+    return "OK";
+}
+if (require.main === module) {
+  main(process.argv)
+    .then(res => {
+      console.log({ res });
+      process.exitCode = 0
+    })
+    .catch(err => {
+      console.log({ err });
+      process.exitCode = 1
+    })
+}
 
