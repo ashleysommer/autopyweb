@@ -4,25 +4,22 @@ const axios = require('axios');
 
 async function main(argv) {
     let deploy_endpoint;
-    let payload;
+    let payload, eventName;
     try {
       deploy_endpoint = core.getInput('dynamic_deploy_endpoint');
       // Get the JSON webhook payload for the event that triggered the workflow
-      payload = JSON.stringify(github.context.payload, undefined, 2)
+      payload = JSON.stringify(github.context.payload, undefined, 2);
+      eventName = github.context.eventName;
     } catch (error) {
       core.setFailed(error.message);
       return;
     }
     console.log("working in: " + __dirname);
+    console.log("event name: "+eventName);
     console.log("event payload: \n"+payload);
 
-    let config = {
-        headers: {
-            'Content-Type': 'application/json;charset=utf-8'
-        }
-    };
     try {
-      let deploy_post_endpoint = deploy_endpoint + "/event";
+      let deploy_post_endpoint = deploy_endpoint + "/add";
       let config = {
         headers: {
           'Content-Type': 'application/json;charset=utf-8'
