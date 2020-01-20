@@ -114,7 +114,7 @@ def add_git_project(location, origin_url, tag=None, branch=None, commit=None, di
                 raise RuntimeError("master ref not found on that origin.")
         if dirname is not None:
             # override dirname with one provided (like, "pr021")
-            _dirname = dirname
+            _dirname = path_friendly(str(dirname))
         linked_repo_path = path.join(location, _dirname)
         clone_dir = "{}-{:s}".format(project_name, str(ref_commit))
         new_repo_path = path.join(location, clone_dir)

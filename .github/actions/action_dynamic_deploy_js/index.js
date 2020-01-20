@@ -4,11 +4,22 @@ const axios = require('axios');
 
 function process_pull_request(event) {
     let pr_id = event['number'];
+    let pr_id_str = (""+pr_id).padStart(3, '0');
     let pr = event['pull_request'];
     let action = event['action']; //open or synchronize
-    let base = event['base']; // this is the dst branch of the PR
-    let head = event['head']; // this is the src branch of the PR
+    let base = pr['base']; // this is the dst branch of the PR
+    let head = pr['head']; // this is the src branch of the PR
+    let queryParams = {};
+    // Note, this is where we need to add some business rules
+    // Need to decide what is a valid PR to push straight to serve
 
+    // For now we really only care about the "head" to deploy it for testing.
+    let head_repo = head['repo'];
+    queryParams['origin'] = head_repo['clone_url'];
+    queryParams['branch'] = head['ref'];
+    queryParams['dirname'] = "pr"+pr_id_str;
+
+    return queryParams;
 }
 
 async function main(argv) {
@@ -26,14 +37,20 @@ async function main(argv) {
     console.log("working in: " + __dirname);
     console.log("event name: "+eventName);
     console.log("event payload: \n"+event);
-
+    let query_params;
     if (eventName === "pull_request") {
-        return process_pull_request(event);
+        try {
+            query_params = process_pull_request(event);
+        } catch (error) {
+            core.setFailed(error);
+            return;
+        }
     }
 
     try {
       let deploy_post_endpoint = deploy_endpoint + "/add";
       let config = {
+        params: query_params,
         headers: {
           'Content-Type': 'application/json;charset=utf-8'
         }
@@ -50,9 +67,16 @@ async function main(argv) {
 if (require.main === module) {
   main(process.argv)
     .then(res => {
-      console.log({ res });
-      process.exitCode = 0;
-      core.setOutput('success', "true");
+      if (res !== "OK") {
+        console.log(res);
+        core.setOutput('success', "false");
+        core.setFailed(res);
+        process.exitCode = 1;
+      } else {
+        console.log({res});
+        process.exitCode = 0;
+        core.setOutput('success', "true");
+      }
     }).catch(err => {
       console.log({ err });
       core.setOutput('success', "false");

@@ -34,6 +34,7 @@ async def add(request):
     maybe_tag = next(iter(request.args.getlist('tag', [None])))
     maybe_branch = next(iter(request.args.getlist('branch', [None])))
     maybe_commit = next(iter(request.args.getlist('commit', [None])))
+    maybe_dirname = next(iter(request.args.getlist('dirname', [None])))
 
     if not any({maybe_tag, maybe_branch, maybe_commit}):
         raise MissingParameter("tag or branch or commit")
@@ -48,7 +49,8 @@ async def add(request):
     kwargs = {
         'tag': maybe_tag,
         'branch': maybe_branch,
-        'commit': maybe_commit
+        'commit': maybe_commit,
+        'dirname': maybe_dirname
     }
     project_path = add_git_project(path.dirname(os.getcwd()), origin_endpoint, **kwargs)
 
