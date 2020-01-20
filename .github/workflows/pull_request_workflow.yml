@@ -1,0 +1,37 @@
+name: test-workflow2
+# This workflow is triggered on pushes to the repository.
+on: [pull_request]
+
+jobs:
+  do_tests:
+    runs-on: ubuntu-latest
+    steps:
+      # This step checks out a copy of your repository.
+      - uses: actions/checkout@v1
+      - name: "setup ubuntu"
+        shell: bash
+        run: sudo apt install python3-setuptools python3-wheel python3-venv
+      - name: "run tests"
+        shell: bash
+        run: |
+          pip3 install --user --upgrade "poetry>=1.0.1"
+          ~/.local/bin/poetry install
+          ~/.local/bin/poetry run pytest tests
+  do_dynamic_deploy_js:
+    runs-on: ubuntu-latest
+    needs: do_tests
+    steps:
+      # This step checks out a copy of your repository.
+      - uses: actions/checkout@v1
+      # This step references the directory that contains the action.
+      - uses: ./.github/actions/action_dynamic_deploy_js
+        with:
+          dynamic_deploy_endpoint: ${{ secrets.monitor_endpoint }}
+
+#  do_dynamic_deploy1:
+#    runs-on: ubuntu-latest
+#    steps:
+#      # This step checks out a copy of your repository.
+#      - uses: actions/checkout@v1
+#      # This step references the directory that contains the action.
+#      - uses: ./.github/actions/action_dynamic_deploy1

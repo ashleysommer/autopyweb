@@ -14,3 +14,5 @@ python-dotenv = "^0.10.0"
 GitPython = "^3.0"
 sanic = "==19.6.3"
 
+[tool.poetry.dev-dependencies]
+pytest = "^3.4"

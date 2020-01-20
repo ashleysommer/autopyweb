@@ -26,7 +26,7 @@ async def list(request):
         print(proj.active_branch)
     return text("ok", 200)
 
-@app.route("/add")
+@app.post("/add")
 async def add(request):
     origin_endpoint = next(iter(request.args.getlist('origin', [None])))
     if origin_endpoint is None:
