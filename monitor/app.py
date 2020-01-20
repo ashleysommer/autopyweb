@@ -3,21 +3,43 @@
 import os
 from os import path
 from sanic import Sanic
-from sanic.exceptions import SanicException
+from sanic.exceptions import SanicException, ServerError
 from sanic.response import text
-from .functions import get_git_projects, add_git_project
+from .functions import get_git_projects, add_git_project, setup_python_project
 
 app = Sanic(__name__)
+
 
 class MissingParameter(SanicException):
     def __init__(self, param):
         message = "InvalidUsage. Missing parameter: {}".format(str(param))
         super().__init__(message, 400)
 
+
 class InvalidParameter(SanicException):
     def __init__(self, param):
         message = "InvalidUsage. Invalid parameter: {}".format(str(param))
         super().__init__(message, 400)
+
+
+def wrap_exception(exc):
+    if isinstance(exc, SanicException):
+        return exc
+    args = getattr(exc, "args", [])
+    message = repr(exc)
+    if args:
+        try:
+            next_line = str(args[0])
+            message = message + "\n" + next_line
+        except KeyError:
+            pass
+        try:
+            next_line = (args[1])
+            message = message + "\n" + next_line
+        except KeyError:
+            pass
+    return ServerError(message=message)
+
 
 @app.route("/list")
 async def list(request):
@@ -52,7 +74,14 @@ async def add(request):
         'commit': maybe_commit,
         'dirname': maybe_dirname
     }
-    project_path = add_git_project(path.dirname(os.getcwd()), origin_endpoint, **kwargs)
-
+    try:
+        project_path = add_git_project(path.dirname(os.getcwd()), origin_endpoint, **kwargs)
+    except Exception as e:
+        raise wrap_exception(e)
+    try:
+        success = setup_python_project(project_path)
+    except Exception as e:
+        raise wrap_exception(e)
+    return success
 
 __all__ = ("app",)
