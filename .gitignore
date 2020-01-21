@@ -8,3 +8,5 @@ container_res/
 __pycache__
 .github/actions/*/node_modules/
 !.github/actions/*/dist/
+testvenv/
+.venv/
