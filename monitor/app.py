@@ -8,7 +8,7 @@ from sanic.response import text, json
 from .functions import get_git_projects, add_git_project, setup_python_project
 
 app = Sanic(__name__)
-
+app.config['RESPONSE_TIMEOUT'] = 318 #(two seconds before Gunicorn worker times out)
 
 class MissingParameter(SanicException):
     def __init__(self, param):
