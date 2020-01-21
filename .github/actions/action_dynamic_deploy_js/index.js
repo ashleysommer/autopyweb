@@ -6,7 +6,7 @@ function process_pull_request(event) {
     let pr_id = event['number'];
     let pr_id_str = (""+pr_id).padStart(3, '0');
     let pr = event['pull_request'];
-    let action = event['action']; //open or synchronize
+    let action = event['action']; //opened or synchronize
     let base = pr['base']; // this is the dst branch of the PR
     let head = pr['head']; // this is the src branch of the PR
     let queryParams = {};
@@ -24,11 +24,12 @@ function process_pull_request(event) {
 
 async function main(argv) {
     let deploy_endpoint;
-    let event, eventName;
+    let event, eventString, eventName;
     try {
       deploy_endpoint = core.getInput('dynamic_deploy_endpoint');
       // Get the JSON webhook payload for the event that triggered the workflow
-      event = JSON.stringify(github.context.payload, undefined, 2);
+      event = github.context.payload;
+      eventString = JSON.stringify(event, undefined, 2);
       eventName = github.context.eventName;
     } catch (error) {
       core.setFailed(error.message);
@@ -36,7 +37,7 @@ async function main(argv) {
     }
     console.log("working in: " + __dirname);
     console.log("event name: "+eventName);
-    console.log("event payload: \n"+event);
+    console.log("event payload: \n"+eventString);
     let query_params;
     if (eventName === "pull_request") {
         try {
