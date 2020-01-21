@@ -120,10 +120,11 @@ def add_git_project(location, origin_url, tag=None, branch=None, commit=None, di
         linked_repo_path = path.join(location, _dirname)
         clone_dir = "{}-{:s}".format(project_name, str(ref_commit))
         new_repo_path = path.join(location, clone_dir)
+        skip_symlink = False
         if path.exists(linked_repo_path):
             existing_link = os.readlink(linked_repo_path)
-            if existing_link == clone_dir:
-                pass
+            if existing_link == new_repo_path:
+                skip_symlink = True
             else:
                 raise RuntimeError("Oh no! That dir already exists pointing to another thing!")
         if not path.isdir(new_repo_path):
@@ -136,164 +137,346 @@ def add_git_project(location, origin_url, tag=None, branch=None, commit=None, di
             # clone of that project at that commit already exists!
             # just symlink it and call it done.
             pass
-        os.symlink(new_repo_path, linked_repo_path)
+        if not skip_symlink:
+            os.symlink(new_repo_path, linked_repo_path)
     finally:
         # Always remove the bare_location tree
         rmtree(bare_location)
     return linked_repo_path
 
-def run_in_venv(args, cwd=None, shell=False, venv_path=None):
-    if cwd is None:
-        cwd = path.abspath(os.getcwd())
-    if venv_path is None:
-        venv_path = path.join(cwd, "venv")
-    old_virtual_env = environ.get("VIRTUAL_ENV", None)
-    old_path = environ.get("PATH", None)
-    old_python_home = environ.get("PYTHON_HOME", None)
-    old_ps1 = environ.get("PS1", None)
-    old_pythonpath = environ.get("PYTHONPATH", None)
-    old_library_roots = environ.get("LIBRARY_ROOTS", None)
-    environ.unsetenv("VIRTUAL_ENV")
-    environ.unsetenv("PYTHON_HOME")
-    environ.unsetenv("PS1")
-    environ.unsetenv("PYTHONPATH")
-    environ.unsetenv("LIBRARY_ROOTS")
-    if old_path:
-        first_colon = old_path.index(":")
-        first_part = old_path[:first_colon]
-        if first_part.endswith("venv/bin"):
-            replacement_path = old_path[first_colon+1:]
-            environ.putenv("PATH", replacement_path)
-    if venv_path is False:
-        if isinstance(args, list):
-            if args[0] == "python3":
-                args[0] = "/usr/bin/python3"
-            elif args[0] == "pip3":
-                args[0] = "/usr/bin/pip3"
-            elif args[0] == "python":
-                args[0] = "/usr/bin/python"
-            elif args[0] == "pip":
-                args[0] = "/usr/bin/pip"
-        elif isinstance(args, str):
-            if args.startswith("python3 "):
-                args = args.replace("python3", "/usr/bin/python3", 1)
-            elif args.startswith("python "):
-                args = args.replace("python", "/usr/bin/python", 1)
-            elif args.startswith("pip3 "):
-                args = args.replace("pip3", "/usr/bin/pip3", 1)
-            elif args.startswith("pip "):
-                args = args.replace("pip", "/usr/bin/pip", 1)
-    else:
-        activate_location = path.join(venv_path, "bin", "activate")
-        cmd2 = ". {} && echo ~~MARKER~~ && set".format(activate_location)
-        env = (subprocess.Popen(cmd2, shell=True, cwd=cwd, stdout=subprocess.PIPE)
-               .stdout.read().decode('utf-8').splitlines())
-        marker = False
-        new_envs = {}
-        for e in env:
-            if marker:
-                e = e.strip().split('=', 1)
-                if len(e) > 1:
-                    name = str(e[0]).upper()
-                    if name in ("IFS", "OPTIND"):
-                        continue
-                    else:
-                        new_envs[name] = e[1].lstrip("'").rstrip("'")
-            elif e.strip() == "~~MARKER~~":
-                marker = True
-        environ.update(new_envs)
-        if isinstance(args, list):
-            if args[0] == "python3":
-                args[0] = path.join(venv_path, "bin", "python3")
-            elif args[0] == "pip3":
-                args[0] = path.join(venv_path, "bin", "pip3")
-            elif args[0] == "python":
-                args[0] = path.join(venv_path, "bin", "python")
-            elif args[0] == "pip":
-                args[0] = path.join(venv_path, "bin", "pip")
-        elif isinstance(args, str):
-            if args.startswith("python3 "):
-                args = args.replace("python3", path.join(venv_path, "bin", "python3"), 1)
-            elif args.startswith("pip3 "):
-                args = args.replace("pip3", path.join(venv_path, "bin", "pip3"), 1)
-            elif args.startswith("python "):
-                args = args.replace("python", path.join(venv_path, "bin", "python"), 1)
-            elif args.startswith("pip "):
-                args = args.replace("pip", path.join(venv_path, "bin", "pip"), 1)
+class CleanEnv(object):
 
-    resp = subprocess.run(args, cwd=cwd, shell=shell, stdout=subprocess.PIPE)
-    if old_library_roots is not None:
-        environ.putenv("LIBRARY_ROOTS", old_library_roots)
-    else:
-        environ.unsetenv("LIBRARY_ROOTS")
-    if old_pythonpath is not None:
-        environ.putenv("PYTHONPATH", old_pythonpath)
-    else:
-        environ.unsetenv("PYTHONPATH")
-    if old_virtual_env is not None:
-        environ.putenv("VIRTUAL_ENV", old_virtual_env)
-    else:
-        environ.unsetenv("VIRTUAL_ENV")
+    params_to_clean = ["VIRTUAL_ENV", "PYTHON_HOME", "PS1", "PYTHONPATH", "LIBRARY_ROOTS"]
+    params_to_save = ["PATH"]
 
-    if old_path is not None:
-        environ.putenv("PATH", old_path)
-    else:
-        environ.unsetenv("PATH")
-    if old_python_home is not None:
-        environ.putenv("PYTHON_HOME", old_python_home)
-    else:
-        environ.unsetenv("PYTHON_HOME")
-    if old_ps1 is not None:
-        environ.putenv("PS1", old_ps1)
-    else:
-        environ.unsetenv("PS1")
-    return resp
+    def __init__(self):
+        self.old_vals = {}
+        for p in self.params_to_clean:
+            self.old_vals[p] = None
+        for p in self.params_to_save:
+            self.old_vals[p] = None
 
-def run_without_venv(args, cwd=None, shell=False):
-    return run_in_venv(args, cwd=cwd, shell=shell, venv_path=False)
+    def __enter__(self):
+        for p in self.params_to_clean:
+            self.old_vals[p] = environ.get(p, None)
+        for p in self.params_to_save:
+            self.old_vals[p] = environ.get(p, None)
+        for p in self.params_to_clean:
+            environ.unsetenv(p)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        for p in self.params_to_clean:
+            old_val = self.old_vals.get(p, None)
+            if old_val is not None:
+                environ.putenv(p, old_val)
+        for p in self.params_to_save:
+            old_val = self.old_vals.get(p, None)
+            if old_val is not None:
+                environ.putenv(p, old_val)
+
+
+
+# def run_in_venv(args, cwd=None, shell=False, venv_path=None):
+#     if cwd is None:
+#         cwd = path.abspath(os.getcwd())
+#     if venv_path is None:
+#         venv_path = path.join(cwd, "venv")
+#
+#     old_path = environ.get("PATH", None)
+#     with CleanEnv() as c:
+#
+#
+#         resp = subprocess.run(args, cwd=cwd, shell=shell, stdout=subprocess.PIPE)
+#         # End of "with CleanEnv()"
+#         # Old Env is restored when exiting this context
+#     return resp
+
+class InVenv(object):
+    def __init__(self, venv_path=None):
+        if venv_path is None:
+            cwd = path.abspath(os.getcwd())
+            venv_path = path.join(cwd, "venv")
+        self.venv_path = venv_path
+        self.old_path = None
+        self.c = None
+
+    def __enter__(self):
+        self.old_path = old_path = environ.get("PATH", None)
+        self.c = CleanEnv()
+        self.c.__enter__()
+        if old_path:
+            first_colon = old_path.index(":")
+            first_part = old_path[:first_colon]
+            if first_part.endswith("venv/bin"):
+                replacement_path = old_path[first_colon+1:]
+                environ.putenv("PATH", replacement_path)
+        if self.venv_path is False:
+            # if isinstance(args, list):
+            #     if args[0] == "python3":
+            #         args[0] = "/usr/bin/python3"
+            #     elif args[0] == "pip3":
+            #         args[0] = "/usr/bin/pip3"
+            #     elif args[0] == "python":
+            #         args[0] = "/usr/bin/python"
+            #     elif args[0] == "pip":
+            #         args[0] = "/usr/bin/pip"
+            # elif isinstance(args, str):
+            #     if args.startswith("python3 "):
+            #         args = args.replace("python3", "/usr/bin/python3", 1)
+            #     elif args.startswith("python "):
+            #         args = args.replace("python", "/usr/bin/python", 1)
+            #     elif args.startswith("pip3 "):
+            #         args = args.replace("pip3", "/usr/bin/pip3", 1)
+            #     elif args.startswith("pip "):
+            #         args = args.replace("pip", "/usr/bin/pip", 1)
+            pass
+        else:
+            venv_parent = path.dirname(self.venv_path)
+            activate_location = path.join(self.venv_path, "bin", "activate")
+
+            cmd2 = ". {} && echo ~~MARKER~~ && set".format(activate_location)
+            env = (subprocess.Popen(cmd2, shell=True, cwd=venv_parent, stdout=subprocess.PIPE)
+                   .stdout.read().decode('utf-8').splitlines())
+            marker = False
+            new_envs = {}
+            for e in env:
+                if marker:
+                    e = e.strip().split('=', 1)
+                    if len(e) > 1:
+                        name = str(e[0]).upper()
+                        if name in ("IFS", "OPTIND"):
+                            continue
+                        else:
+                            new_envs[name] = e[1].lstrip("'").rstrip("'")
+                elif e.strip() == "~~MARKER~~":
+                    marker = True
+            environ.update(new_envs)
+            # if isinstance(args, list):
+            #     if args[0] == "python3":
+            #         args[0] = path.join(venv_path, "bin", "python3")
+            #     elif args[0] == "pip3":
+            #         args[0] = path.join(venv_path, "bin", "pip3")
+            #     elif args[0] == "python":
+            #         args[0] = path.join(venv_path, "bin", "python")
+            #     elif args[0] == "pip":
+            #         args[0] = path.join(venv_path, "bin", "pip")
+            # elif isinstance(args, str):
+            #     if args.startswith("python3 "):
+            #         args = args.replace("python3", path.join(venv_path, "bin", "python3"), 1)
+            #     elif args.startswith("pip3 "):
+            #         args = args.replace("pip3", path.join(venv_path, "bin", "pip3"), 1)
+            #     elif args.startswith("python "):
+            #         args = args.replace("python", path.join(venv_path, "bin", "python"), 1)
+            #     elif args.startswith("pip "):
+            #         args = args.replace("pip", path.join(venv_path, "bin", "pip"), 1)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.c is not None:
+            self.c.__exit__(exc_type, exc_val, exc_tb)
+        if self.old_path is not None:
+            environ.putenv("PATH", self.old_path)
+
+class NoVenv(InVenv):
+    def __init__(self):
+        super(NoVenv, self).__init__(False)
+
+
 
 def make_venv(parent_dir, venv_name="venv"):
-    args = "python3 -m venv --symlinks {}".format(venv_name)
+    args = "/usr/bin/python3 -m venv --symlinks {}".format(venv_name)
     venv_path = path.join(parent_dir, venv_name)
-    resp = run_without_venv(args, parent_dir, shell=True)
+    with NoVenv():
+        resp = subprocess.run(args, cwd=parent_dir, shell=True, stdout=subprocess.PIPE)
     assert resp.returncode == 0
     assert path.isdir(venv_path)
     return venv_path
 
-def process_pyproject_toml(file_path):
+def init_pyproject_toml_project(file_path):
     if not path.isfile(file_path):
         return False, {}
     project_dir = path.dirname(file_path)
-    venv_path = make_venv(project_dir, "testvenv")
-    resp = run_in_venv(["pip3", "install", "poetry>=1.0.2"], cwd=project_dir, shell=False, venv_path=venv_path)
+    venv_path = make_venv(project_dir, "dynvenv")
+    pip3_path = path.join(venv_path, "bin", "pip3")
     poetry_path = path.join(venv_path, "bin", "poetry")
-    # set poetry config
-    #virtualenvs.in-project = true
-    resp = run_in_venv("{} config --local virtualenvs.in-project true".format(poetry_path), cwd=project_dir, shell=True, venv_path=venv_path)
-    req_txt_file = path.join(project_dir, "tempreq.txt")
-    resp = run_in_venv("{} export -f requirements.txt -o {}".format(poetry_path, req_txt_file), cwd=project_dir, shell=True, venv_path=venv_path)
+    with InVenv(venv_path):
+        resp = subprocess.run([pip3_path, "install", "poetry>=1.0.2"],
+                              cwd=project_dir, shell=False, stdout=subprocess.PIPE)
+        # set poetry config
+        #virtualenvs.in-project = true
+        resp = subprocess.run("{} config --local virtualenvs.in-project true".format(poetry_path),
+                              cwd=project_dir, shell=True)
+        req_txt_file = path.join(project_dir, "tempreq.txt")
+        resp = subprocess.run("{} export -f requirements.txt --without-hashes -o {}".format(poetry_path, req_txt_file),
+                              cwd=project_dir, shell=True)
     requirements = []
     if resp.returncode == 0:
         with open(req_txt_file, "r", encoding="utf-8") as f:
             lines = f.readlines()
         requirements.extend(lines)
-
+        os.unlink(req_txt_file)
     return True, {"venv": venv_path, "requirements": requirements}
 
 def install_poetry_project(project_dir, venv):
     poetry_path = path.join(venv, "bin", "poetry")
-    resp = run_in_venv("{} install".format(poetry_path), cwd=project_dir, shell=True, venv_path=venv)
+    with InVenv(venv):
+        resp = subprocess.run("{} install".format(poetry_path), cwd=project_dir, shell=True)
+    return resp
+
+def init_setup_py_project(file_path):
+    if not path.isfile(file_path):
+        return False, {}
+    project_dir = path.dirname(file_path)
+    venv_path = make_venv(project_dir, "dynvenv")
+    import distutils.core
+    with InVenv(venv_path):
+        setup = distutils.core.run_setup(file_path)
+    print(setup.install_requires)
+    requirements = setup.install_requires
+    return True, {"venv": venv_path, "requirements": requirements}
+
+def install_setup_py_project(location, venv):
+    pip3 = path.join(venv, "bin", "pip3")
+    with InVenv(venv):
+        resp = subprocess.run("{} install .".format(pip3), cwd=location, shell=True)
     return resp
 
 
-def process_setup_py(file_path):
+def init_requirements_txt_project(file_path):
     if not path.isfile(file_path):
         return False, {}
-    import distutils.core
-    setup = distutils.core.run_setup(file_path)
-    print(setup.install_requires)
+    project_dir = path.dirname(file_path)
+    venv_path = make_venv(project_dir, "dynvenv")
+    requirements = []
+    with open(file_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+    requirements.extend(lines)
+    return True, {"venv": venv_path, "requirements": requirements}
 
-def setup_python_project(location):
+def install_requirements_txt(file_path, venv):
+    venv_parent = path.dirname(venv)
+    pip3_path = path.join(venv, "bin", "pip3")
+    with InVenv(venv):
+        resp = subprocess.run([pip3_path, "install", "-r", file_path],
+                              cwd=venv_parent, shell=False, stdout=subprocess.PIPE)
+        print(resp)
+    return resp
+
+def install_gunicorn(venv):
+    pip3_path = path.join(venv, "bin", "pip3")
+    venv_parent = path.dirname(venv)
+    with InVenv(venv):
+        resp = subprocess.run([pip3_path, "install", "gunicorn>=20.0.1,<20.99"],
+                              cwd=venv_parent, shell=False, stdout=subprocess.PIPE)
+        print(resp)
+    return resp
+
+def load_gunicorn_conf(conf_file):
+    g = {'__file__': conf_file}
+    l = {}
+    with NoVenv():
+        try:
+            with open(conf_file, "r") as f:
+                exec(f.read(), g, l)
+        except Exception:
+            l = {}
+    return l
+
+
+def make_gunicorn_run(project_dir, venv, debug=True, workers=1, threads=4, target=None, **kwargs):
+    venv_path = path.abspath(venv)
+    if debug:
+        log_level = "debug"
+    else:
+        log_level = "info"
+    proj_name = path.basename(project_dir.rstrip("/"))
+    run_file = path.join(project_dir, "run.sh")
+    stop_file = path.join(project_dir, "stop.sh")
+    conf_file = path.join(project_dir, "gunicorn.conf.py")
+    extra = []
+    if path.isfile(conf_file):
+        gunicorn_conf = load_gunicorn_conf(conf_file)
+        extra.append("-c ./gunicorn.conf.py")
+    else:
+        gunicorn_conf = {}
+    if "app_module" in gunicorn_conf:
+        target = gunicorn_conf['app_module']
+    if target is None:
+        files = os.listdir(project_dir)
+        if "app.py" in files:
+            target = "app"
+        elif "wsgi.py" in files:
+            target = "wsgi"
+        elif "application.py" in files:
+            target = "application"
+        else:
+            target = "app"
+    if "workers" in gunicorn_conf:
+        workers = int(gunicorn_conf['workers'])
+    if "threads" in gunicorn_conf:
+        threads = int(gunicorn_conf['threads'])
+    if "worker_class" in gunicorn_conf:
+        extra.append("-k {}".format(str(gunicorn_conf['worker_class'])))
+    elif kwargs.get("is_tornado_app", False):
+        extra.append("-k tornado")
+    elif kwargs.get("is_sanic_app", False):
+        extra.append("-k sanic.worker.GunicornWorker")
+    extra = " ".join(extra)
+    run_template = '''\
+#!/bin/sh
+. {venv_path:s}/bin/activate
+exec {venv_path:s}/bin/gunicorn --log-level {log_level:s} -b unix:./gunicorn.sock --pid ./gunicorn.pid --workers {workers:d} --threads {threads:d} -n {proj_name:s} {extra:s} {target:s}
+'''.format(**locals())
+    stop_template = '''\
+#!/bin/sh
+PIDFILE=./gunicorn.pid
+SOCKFILE=./gunicorn.sock
+if [ ! -f "$PIDFILE" ]; then
+    exit 0
+fi
+
+read PID <$PIDFILE
+kill -WINCH $PID
+sleep 5
+if [ -f "$PIDFILE" ]; then
+    kill -TERM $PID
+    sleep 10
+fi
+
+if [ -f "$PIDFILE" ]; then
+    kill -9 $PID
+    sleep 1
+fi
+
+rm -rf "$SOCKFILE"
+rm -rf "$PIDFILE"
+exit 0
+'''.format(**locals())
+    if not path.exists(run_file):
+        with open(run_file, "w", encoding="latin-1") as f:
+            f.write(run_template)
+        os.chmod(run_file, 0o777)  # Executable for everyone.
+    if not path.exists(stop_file):
+        with open(stop_file, "w", encoding="latin-1") as f:
+            f.write(stop_template)
+        os.chmod(stop_file, 0o777)  # Executable for everyone
+    return True
+
+def launch(project_dir):
+    run_file = path.join(project_dir, "run.sh")
+    with NoVenv():
+        #cmdline = "/usr/bin/nuhup {} &".format(run_file)
+        cmdline = "/usr/bin/nohup ./run.sh &"
+        resp = subprocess.run(cmdline, cwd=project_dir, shell=True)
+    return resp
+
+def stop(project_dir):
+    stop_file = path.join(project_dir, "stop.sh")
+    with NoVenv():
+        cmdline = "/usr/bin/nohup ./stop.sh"
+        resp = subprocess.run(cmdline, cwd=project_dir, shell=True)
+    return resp
+
+def setup_python_project(location, execute=True):
     """
     We have a freshly cloned source codebase, now run it, but how?
     :param location:
@@ -302,13 +485,14 @@ def setup_python_project(location):
     :rtype: bool
     """
     # ACTION PLAN!
-    # 1) Detect if there's requirements.txt or pyproject.toml or something else?
+    # 1) Detect if there's pyproject.toml or requirements.txt or something else?
     # 2) Set up virtualenv for project to use
     # 3) Install requirements with either PIP or Poetry depending on project type
     # 4) Install gunicorn too (we need it to serve to a unix socket file)
     # 5) Detect if its a flask app or a sanic app (support for others to come)
     # 6) Detect where the app entrypoint is (app.py, app.wsgi, wsgi.py, source/app.py)?
     # 7) Create a `run_gunicorn.sh` file with shell script to run the app
+    # 8) Execute it!
 
     # This routine will likely need to be modified and extended going forward as
     # we encounter more project types
@@ -316,22 +500,67 @@ def setup_python_project(location):
     is_poetry_prj = False
     is_setup_py_prj = False
     is_bare_requirements = False
+    found_parameters = {}
     dir_contents = os.listdir(location)
     if "pyproject.toml" in dir_contents:
         pyproject_location = path.join(location, "pyproject.toml")
-        is_poetry_prj, params = process_pyproject_toml(pyproject_location)
+        is_poetry_prj, params = init_pyproject_toml_project(pyproject_location)
+        found_parameters.update(params)
     if not is_poetry_prj and "setup.py" in dir_contents:
         setup_py_location = path.join(location, "setup.py")
-        is_setup_py_prj, params = process_setup_py(setup_py_location)
+        is_setup_py_prj, params = init_setup_py_project(setup_py_location)
+        found_parameters.update(params)
+    if not is_poetry_prj and not is_setup_py_prj and "requirements.txt" in dir_contents:
+        setup_py_location = path.join(location, "requirements.txt")
+        is_bare_requirements, params = init_requirements_txt_project(setup_py_location)
+        found_parameters.update(params)
+
+
     requirements = params.get("requirements", [])
+    deploy_params = {
+        "is_sanic_app": False,
+        "is_flask_app": False,
+        "is_tornado_app": False,
+    }
+
+    for r in requirements:
+        r = str(r)
+        if r.startswith("  ") or r.startswith("--"):
+            continue
+        r1 = str(r).lstrip(" -!").split("=", 1)[0].split(">", 1)[0].split("<", 1)[0].split("!", 1)[0].split(" ", 1)[0]
+        if r1 == "sanic":
+            deploy_params['is_sanic_app'] = True
+            break
+        elif r1 == "tornado":
+            deploy_params['is_tornado_app'] = True
+            break
+        elif r1 == "flask":
+            deploy_params['is_flask_app'] = True
+            break
+
+    if not any({deploy_params['is_flask_app'], deploy_params['is_sanic_app'], deploy_params['is_tornado_app']}):
+        pass  # assume its a generic wsgi-compatible app
+
     venv = params.get("venv", None)
     if is_poetry_prj and venv:
         resp = install_poetry_project(location, venv)
         print(resp)
+    elif is_setup_py_prj and venv:
+        resp = install_setup_py_project(location, venv)
+    elif is_bare_requirements and venv:
+        resp = install_requirements_txt(path.join(location, "requirements.txt"), venv)
+    if venv:
+        resp = install_gunicorn(venv)
+    make_gunicorn_run(location, venv, **deploy_params)
+    if execute:
+        launch(location)
+
+
+
 
 if __name__ == "__main__":
     here = path.abspath(os.getcwd())
-    # v2 = make_venv(here, "testvenv")
+    # v2 = make_venv(here, "dynvenv")
     # resp = run_in_venv(["python3", "--version"], venv_path=v2)
     # print(resp)
     setup_python_project(here)

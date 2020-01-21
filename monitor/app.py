@@ -4,7 +4,7 @@ import os
 from os import path
 from sanic import Sanic
 from sanic.exceptions import SanicException, ServerError
-from sanic.response import text
+from sanic.response import text, json
 from .functions import get_git_projects, add_git_project, setup_python_project
 
 app = Sanic(__name__)
@@ -31,12 +31,12 @@ def wrap_exception(exc):
         try:
             next_line = str(args[0])
             message = message + "\n" + next_line
-        except KeyError:
+        except IndexError:
             pass
         try:
             next_line = (args[1])
             message = message + "\n" + next_line
-        except KeyError:
+        except IndexError:
             pass
     return ServerError(message=message)
 
@@ -75,13 +75,17 @@ async def add(request):
         'dirname': maybe_dirname
     }
     try:
+        print("adding git project to filesystem: {}".format(str(origin_endpoint)))
         project_path = add_git_project(path.dirname(os.getcwd()), origin_endpoint, **kwargs)
+        print("finished add git project: {}".format(str(origin_endpoint)))
     except Exception as e:
         raise wrap_exception(e)
     try:
+        print("Setting up project: {}".format(str(project_path)))
         success = setup_python_project(project_path)
+        print("Done set up project.")
     except Exception as e:
         raise wrap_exception(e)
-    return success
+    return json({"success": success})
 
 __all__ = ("app",)
