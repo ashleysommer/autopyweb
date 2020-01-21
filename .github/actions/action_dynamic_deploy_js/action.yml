@@ -1,0 +1,17 @@
+name: "Dynamic Deploy JS"
+description: "Custom action that pushes to our custom dynamic deployment."
+inputs:
+  dynamic_deploy_endpoint:
+    default: "https://example.org/"
+    required: true
+    description: "Where to deliver the deploy instructions to"
+
+outputs:
+  success:
+    description: "Successful deploy"
+
+runs:
+  using: node12
+  main: "dist/index.js"
+
+
