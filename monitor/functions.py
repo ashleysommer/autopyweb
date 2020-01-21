@@ -286,7 +286,7 @@ def make_venv(parent_dir, venv_name="venv"):
     args = "/usr/bin/python3 -m venv --symlinks {}".format(venv_name)
     venv_path = path.join(parent_dir, venv_name)
     with NoVenv():
-        resp = subprocess.run(args, cwd=parent_dir, shell=True, stdout=subprocess.PIPE)
+        resp = subprocess.run(args, cwd=parent_dir, shell=True)
     assert resp.returncode == 0
     assert path.isdir(venv_path)
     return venv_path
@@ -299,8 +299,10 @@ def init_pyproject_toml_project(file_path):
     pip3_path = path.join(venv_path, "bin", "pip3")
     poetry_path = path.join(venv_path, "bin", "poetry")
     with InVenv(venv_path):
+        resp = subprocess.run([pip3_path, "install", "wheel"],
+                              cwd=project_dir, shell=False)
         resp = subprocess.run([pip3_path, "install", "poetry>=1.0.2"],
-                              cwd=project_dir, shell=False, stdout=subprocess.PIPE)
+                              cwd=project_dir, shell=False)
         # set poetry config
         #virtualenvs.in-project = true
         resp = subprocess.run("{} config --local virtualenvs.in-project true".format(poetry_path),
@@ -357,8 +359,7 @@ def install_requirements_txt(file_path, venv):
     pip3_path = path.join(venv, "bin", "pip3")
     with InVenv(venv):
         resp = subprocess.run([pip3_path, "install", "-r", file_path],
-                              cwd=venv_parent, shell=False, stdout=subprocess.PIPE)
-        print(resp)
+                              cwd=venv_parent, shell=False)
     return resp
 
 def install_gunicorn(venv):
@@ -366,8 +367,7 @@ def install_gunicorn(venv):
     venv_parent = path.dirname(venv)
     with InVenv(venv):
         resp = subprocess.run([pip3_path, "install", "gunicorn>=20.0.1,<20.99"],
-                              cwd=venv_parent, shell=False, stdout=subprocess.PIPE)
-        print(resp)
+                              cwd=venv_parent, shell=False)
     return resp
 
 def load_gunicorn_conf(conf_file):
