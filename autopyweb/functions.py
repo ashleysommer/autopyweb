@@ -1,16 +1,20 @@
 # -*- coding: utf-8 -*-
 #
+import sys
 from os import path, environ
 import subprocess
 import os
-import git
-from git import Repo, Head, Tag
+from git import Repo
 from shutil import rmtree
 import time
-from venv import EnvBuilder
+
+from pkg_resources import working_set
+from setuptools.sandbox import save_pkg_resources_state, save_modules, setup_context, _execfile, DirectorySandbox
+
 
 def debug_print(output, *args, **kwargs):
     print(output, *args, **kwargs)
+
 
 def get_git_projects(location):
     location = path.abspath(location)
@@ -35,6 +39,7 @@ def get_git_projects(location):
         repos.append(r)
     return repos
 
+
 def guess_project_name(guess_string):
     if guess_string.startswith("https://"):
         guess_string = guess_string[8:]
@@ -52,22 +57,25 @@ def guess_project_name(guess_string):
     split_parts = [s for s in split_parts if len(s)]
     return split_parts[-1]
 
+
 def path_friendly(instring):
     instring = instring.replace("/", "")
     instring = instring.replace("_", "-")
     instring = instring.replace(".", "-")
     return instring
 
-def add_git_project(location, origin_url, tag=None, branch=None, commit=None, dirname=None, **kwargs):
+
+def add_git_project(location, origin_url, tag=None, branch=None, commit=None, dirname=None, do_update=False,
+                    **kwargs):
     project_name = path_friendly(guess_project_name(origin_url))
     location = path.abspath(location)
     t = str(int(time.time()))
-    bare_location = path.join(location, 'bare-{}-{}'.format(project_name, t))
+    bare_location = path.join(location, "bare-{}-{}".format(project_name, t))
     if path.isdir(bare_location):
         rmtree(bare_location)
     repo = Repo.init(bare_location, bare=True)
     try:
-        REMOTE_NAME='origin'
+        REMOTE_NAME = "origin"
         origin_remote = repo.create_remote(REMOTE_NAME, origin_url)
         exists = origin_remote.exists()
         if not exists:
@@ -86,7 +94,7 @@ def add_git_project(location, origin_url, tag=None, branch=None, commit=None, di
             try:
                 ref = repo.remotes[REMOTE_NAME].refs[str(tag)]
                 ref_commit = ref.commit
-                _dirname = "tag-{:s}-{:s}".format(path_friendly(tag), str(ref_commit)[:7])
+                _dirname = "{:s}-tag-{:s}-{:s}".format(project_name, path_friendly(tag), str(ref_commit)[:7])
             except KeyError:
                 raise RuntimeError("Tag not found on that origin: {}".format(tag))
         elif branch is not None:
@@ -97,11 +105,11 @@ def add_git_project(location, origin_url, tag=None, branch=None, commit=None, di
             try:
                 ref = repo.remotes[REMOTE_NAME].refs[str(branch)]
                 ref_commit = ref.commit
-                _dirname = "br-{:s}-{:s}".format(path_friendly(branch), str(ref_commit)[:7])
+                _dirname = "{:s}-br-{:s}-{:s}".format(project_name, path_friendly(branch), str(ref_commit)[:7])
             except KeyError:
                 raise RuntimeError("Branch not found on that origin: {}".format(branch))
         elif commit is not None:
-            raise NotImplementedError("Cannot fetch remote reference from just a commit id.")
+            raise NotImplementedError("Cannot yet fetch remote reference from just a commit id.")
             # try:
             #     ref = repo.remotes[REMOTE_NAME].refs[commit]
             #     _dirname = "sha-{:s}".format(ref.commit)
@@ -111,20 +119,48 @@ def add_git_project(location, origin_url, tag=None, branch=None, commit=None, di
             try:
                 ref = repo.remotes[REMOTE_NAME].refs.master
                 ref_commit = ref.commit
-                _dirname = 'm-{:s}'.format(str(ref_commit)[:7])
+                _dirname = "{:s}-m-{:s}".format(project_name, str(ref_commit)[:7])
             except (KeyError, AttributeError):
                 raise RuntimeError("master ref not found on that origin.")
         if dirname is not None:
             # override dirname with one provided (like, "pr021")
-            _dirname = path_friendly(str(dirname))
+            _dirname = "{:s}-{:s}".format(project_name, path_friendly(str(dirname)))
         linked_repo_path = path.join(location, _dirname)
-        clone_dir = "{}-{:s}".format(project_name, str(ref_commit))
+        clone_dir = "{:s}-{:s}".format(project_name, str(ref_commit))
         new_repo_path = path.join(location, clone_dir)
         skip_symlink = False
         if path.exists(linked_repo_path):
-            existing_link = os.readlink(linked_repo_path)
-            if existing_link == new_repo_path:
+            existing_repo = os.readlink(linked_repo_path)
+            if not path.exists(existing_repo):
+                # Old dangling symlink. Just kill it, and move on.
+                try:
+                    os.unlink(linked_repo_path)
+                except Exception as e:
+                    raise RuntimeError("Found a non-removable dangling symlink where we want to place a new "
+                                       "directory link.")
+            elif existing_repo == new_repo_path:
+                # We already have this exact dirname linked to the correct repo!
                 skip_symlink = True
+            elif do_update:
+                # First delete this symlink
+                try:
+                    os.unlink(linked_repo_path)
+                except Exception as e:
+                    if path.exists(linked_repo_path):
+                        raise RuntimeError("Cannot update that dirname to new repo because the only link cannot "
+                                           "be removed.\n"+str(e))
+                    # old link is gone, lets continue
+                # Terminate current version
+                try:
+                    resp = stop(existing_repo, wait=True)
+                except Exception:
+                    # Don't matter, just continue
+                    pass
+                # Remove the entire old directory tree
+                try:
+                    rmtree(existing_repo)
+                except Exception:
+                    pass
             else:
                 raise RuntimeError("Oh no! That dir already exists pointing to another thing!")
         if not path.isdir(new_repo_path):
@@ -143,6 +179,7 @@ def add_git_project(location, origin_url, tag=None, branch=None, commit=None, di
         # Always remove the bare_location tree
         rmtree(bare_location)
     return linked_repo_path
+
 
 class CleanEnv(object):
 
@@ -175,22 +212,6 @@ class CleanEnv(object):
                 environ.putenv(p, old_val)
 
 
-
-# def run_in_venv(args, cwd=None, shell=False, venv_path=None):
-#     if cwd is None:
-#         cwd = path.abspath(os.getcwd())
-#     if venv_path is None:
-#         venv_path = path.join(cwd, "venv")
-#
-#     old_path = environ.get("PATH", None)
-#     with CleanEnv() as c:
-#
-#
-#         resp = subprocess.run(args, cwd=cwd, shell=shell, stdout=subprocess.PIPE)
-#         # End of "with CleanEnv()"
-#         # Old Env is restored when exiting this context
-#     return resp
-
 class InVenv(object):
     def __init__(self, venv_path=None):
         if venv_path is None:
@@ -198,17 +219,23 @@ class InVenv(object):
             venv_path = path.join(cwd, "venv")
         self.venv_path = venv_path
         self.old_path = None
-        self.c = None
+        self.e = None
+        self.p = None
+        self.m = None
 
     def __enter__(self):
         self.old_path = old_path = environ.get("PATH", None)
-        self.c = CleanEnv()
-        self.c.__enter__()
+        self.p = save_pkg_resources_state()
+        pkgs = self.p.__enter__()
+        self.m = save_modules()
+        modules = self.m.__enter__()
+        self.e = CleanEnv()
+        self.e.__enter__()
         if old_path:
             first_colon = old_path.index(":")
             first_part = old_path[:first_colon]
             if first_part.endswith("venv/bin"):
-                replacement_path = old_path[first_colon+1:]
+                replacement_path = old_path[first_colon + 1 :]
                 environ.putenv("PATH", replacement_path)
         if self.venv_path is False:
             # if isinstance(args, list):
@@ -235,13 +262,17 @@ class InVenv(object):
             activate_location = path.join(self.venv_path, "bin", "activate")
 
             cmd2 = ". {} && echo ~~MARKER~~ && set".format(activate_location)
-            env = (subprocess.Popen(cmd2, shell=True, cwd=venv_parent, stdout=subprocess.PIPE)
-                   .stdout.read().decode('utf-8').splitlines())
+            env = (
+                subprocess.Popen(cmd2, shell=True, cwd=venv_parent, stdout=subprocess.PIPE)
+                .stdout.read()
+                .decode("utf-8")
+                .splitlines()
+            )
             marker = False
             new_envs = {}
             for e in env:
                 if marker:
-                    e = e.strip().split('=', 1)
+                    e = e.strip().split("=", 1)
                     if len(e) > 1:
                         name = str(e[0]).upper()
                         if name in ("IFS", "OPTIND"):
@@ -271,15 +302,20 @@ class InVenv(object):
             #         args = args.replace("pip", path.join(venv_path, "bin", "pip"), 1)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.c is not None:
-            self.c.__exit__(exc_type, exc_val, exc_tb)
+        if self.e is not None:
+            self.e.__exit__(exc_type, exc_val, exc_tb)
         if self.old_path is not None:
             environ.putenv("PATH", self.old_path)
+        if self.m is not None:
+            self.m.__exit__(exc_type, exc_val, exc_tb)
+        if self.p is not None:
+            self.p.__exit__(exc_type, exc_val, exc_tb)
+
 
 class NoVenv(InVenv):
     def __init__(self):
-        super(NoVenv, self).__init__(False)
-
+        # Pass venv_path=False to indicate _no_ venv.
+        super(NoVenv, self).__init__(venv_path=False)
 
 
 def make_venv(parent_dir, venv_name="venv"):
@@ -291,36 +327,40 @@ def make_venv(parent_dir, venv_name="venv"):
     assert path.isdir(venv_path)
     return venv_path
 
+
 def init_pyproject_toml_project(file_path):
     if not path.isfile(file_path):
         return False, {}
     project_dir = path.dirname(file_path)
-    venv_path = make_venv(project_dir, "dynvenv")
-    pip3_path = path.join(venv_path, "bin", "pip3")
-    poetry_path = path.join(venv_path, "bin", "poetry")
-    with InVenv(venv_path):
-        resp = subprocess.run([pip3_path, "install", "wheel"],
-                              cwd=project_dir, shell=False)
-        resp = subprocess.run([pip3_path, "install", "poetry>=1.0.2"],
-                              cwd=project_dir, shell=False)
+    venv_dir = make_venv(project_dir, venv_name=".venv")
+    pip3_path = path.join(venv_dir, "bin", "pip3")
+    poetry_path = path.join(venv_dir, "bin", "poetry")
+    with InVenv(venv_dir):
+        resp = subprocess.run([pip3_path, "install", "setuptools", "wheel"], cwd=project_dir, shell=False)
+        resp = subprocess.run([pip3_path, "install", "poetry>=1.0.2"], cwd=project_dir, shell=False)
         # set poetry config
-        #virtualenvs.in-project = true
-        resp = subprocess.run("{} config --local virtualenvs.in-project true".format(poetry_path),
-                              cwd=project_dir, shell=True)
+        # virtualenvs.in-project = true
+        resp = subprocess.run(
+            "{} config --local virtualenvs.in-project true".format(poetry_path), cwd=project_dir, shell=True
+        )
         req_txt_file = path.join(project_dir, "tempreq.txt")
-        resp = subprocess.run("{} export -f requirements.txt --without-hashes -o {}".format(poetry_path, req_txt_file),
-                              cwd=project_dir, shell=True)
+        resp = subprocess.run(
+            "{} export -f requirements.txt --without-hashes -o {}".format(poetry_path, req_txt_file),
+            cwd=project_dir,
+            shell=True,
+        )
     requirements = []
     if resp.returncode == 0:
         with open(req_txt_file, "r", encoding="utf-8") as f:
             lines = f.readlines()
         requirements.extend(lines)
         os.unlink(req_txt_file)
-    return True, {"venv": venv_path, "requirements": requirements}
+    return True, {"venv": venv_dir, "requirements": requirements}
 
-def install_poetry_project(project_dir, venv):
-    poetry_path = path.join(venv, "bin", "poetry")
-    with InVenv(venv):
+
+def install_poetry_project(project_dir, venv_dir):
+    poetry_path = path.join(venv_dir, "bin", "poetry")
+    with InVenv(venv_dir):
         resp = subprocess.run("{} install".format(poetry_path), cwd=project_dir, shell=True)
     return resp
 
@@ -328,17 +368,18 @@ def init_setup_py_project(file_path):
     if not path.isfile(file_path):
         return False, {}
     project_dir = path.dirname(file_path)
-    venv_path = make_venv(project_dir, "dynvenv")
+    venv_dir = make_venv(project_dir, venv_name="dynvenv")
     import distutils.core
-    with InVenv(venv_path):
+    with InVenv(venv_dir):
         setup = distutils.core.run_setup(file_path)
-    print(setup.install_requires)
     requirements = setup.install_requires
-    return True, {"venv": venv_path, "requirements": requirements}
+    return True, {"venv": venv_dir, "requirements": requirements}
 
-def install_setup_py_project(location, venv):
-    pip3 = path.join(venv, "bin", "pip3")
-    with InVenv(venv):
+
+def install_setup_py_project(location, venv_dir):
+    pip3 = path.join(venv_dir, "bin", "pip3")
+    with InVenv(venv_dir):
+        resp = subprocess.run([pip3, "install", "setuptools", "wheel"], cwd=location, shell=False)
         resp = subprocess.run("{} install .".format(pip3), cwd=location, shell=True)
     return resp
 
@@ -347,39 +388,40 @@ def init_requirements_txt_project(file_path):
     if not path.isfile(file_path):
         return False, {}
     project_dir = path.dirname(file_path)
-    venv_path = make_venv(project_dir, "dynvenv")
+    venv_dir = make_venv(project_dir, "dynvenv")
     requirements = []
     with open(file_path, "r", encoding="utf-8") as f:
         lines = f.readlines()
     requirements.extend(lines)
-    return True, {"venv": venv_path, "requirements": requirements}
+    return True, {"venv": venv_dir, "requirements": requirements}
 
-def install_requirements_txt(file_path, venv):
-    venv_parent = path.dirname(venv)
+
+def install_requirements_txt(project_dir, file_path, venv):
     pip3_path = path.join(venv, "bin", "pip3")
     with InVenv(venv):
-        resp = subprocess.run([pip3_path, "install", "-r", file_path],
-                              cwd=venv_parent, shell=False)
+        resp = subprocess.run([pip3_path, "install", "setuptools", "wheel"], cwd=project_dir, shell=False)
+        resp = subprocess.run([pip3_path, "install", "-r", file_path], cwd=project_dir, shell=False)
     return resp
+
 
 def install_gunicorn(venv):
     pip3_path = path.join(venv, "bin", "pip3")
     venv_parent = path.dirname(venv)
     with InVenv(venv):
-        resp = subprocess.run([pip3_path, "install", "gunicorn>=20.0.1,<20.99"],
-                              cwd=venv_parent, shell=False)
+        resp = subprocess.run([pip3_path, "install", "gunicorn>=20.0.1,<20.99"], cwd=venv_parent, shell=False)
     return resp
 
+
 def load_gunicorn_conf(conf_file):
-    g = {'__file__': conf_file}
-    l = {}
+    g = {"__file__": conf_file}
+    _locals = {}
     with NoVenv():
         try:
             with open(conf_file, "r") as f:
-                exec(f.read(), g, l)
+                exec(f.read(), g, _locals)
         except Exception:
-            l = {}
-    return l
+            _locals = {}
+    return _locals
 
 
 def make_gunicorn_run(project_dir, venv, debug=True, workers=1, threads=4, target=None, **kwargs):
@@ -399,7 +441,7 @@ def make_gunicorn_run(project_dir, venv, debug=True, workers=1, threads=4, targe
     else:
         gunicorn_conf = {}
     if "app_module" in gunicorn_conf:
-        target = gunicorn_conf['app_module']
+        target = gunicorn_conf["app_module"]
     if target is None:
         files = os.listdir(project_dir)
         if "app.py" in files:
@@ -411,22 +453,24 @@ def make_gunicorn_run(project_dir, venv, debug=True, workers=1, threads=4, targe
         else:
             target = "app"
     if "workers" in gunicorn_conf:
-        workers = int(gunicorn_conf['workers'])
+        workers = int(gunicorn_conf["workers"])
     if "threads" in gunicorn_conf:
-        threads = int(gunicorn_conf['threads'])
+        threads = int(gunicorn_conf["threads"])
     if "worker_class" in gunicorn_conf:
-        extra.append("-k {}".format(str(gunicorn_conf['worker_class'])))
+        extra.append("-k {}".format(str(gunicorn_conf["worker_class"])))
     elif kwargs.get("is_tornado_app", False):
         extra.append("-k tornado")
     elif kwargs.get("is_sanic_app", False):
         extra.append("-k sanic.worker.GunicornWorker")
     extra = " ".join(extra)
-    run_template = '''\
+    run_template = """\
 #!/bin/sh
 . {venv_path:s}/bin/activate
 exec {venv_path:s}/bin/gunicorn --log-level {log_level:s} -b unix:./gunicorn.sock --pid ./gunicorn.pid --workers {workers:d} --threads {threads:d} -n {proj_name:s} {extra:s} {target:s}
-'''.format(**locals())
-    stop_template = '''\
+""".format(
+        **locals()
+    )
+    stop_template = """\
 #!/bin/sh
 PIDFILE=./gunicorn.pid
 SOCKFILE=./gunicorn.sock
@@ -450,7 +494,9 @@ fi
 rm -rf "$SOCKFILE"
 rm -rf "$PIDFILE"
 exit 0
-'''.format(**locals())
+""".format(
+        **locals()
+    )
     if not path.exists(run_file):
         with open(run_file, "w", encoding="latin-1") as f:
             f.write(run_template)
@@ -461,20 +507,24 @@ exit 0
         os.chmod(stop_file, 0o777)  # Executable for everyone
     return True
 
+
 def launch(project_dir):
-    run_file = path.join(project_dir, "run.sh")
     with NoVenv():
-        #cmdline = "/usr/bin/nuhup {} &".format(run_file)
+        # cmdline = "/usr/bin/nuhup {} &".format(run_file)
         cmdline = "/usr/bin/nohup ./run.sh &"
         resp = subprocess.run(cmdline, cwd=project_dir, shell=True)
     return resp
 
-def stop(project_dir):
-    stop_file = path.join(project_dir, "stop.sh")
+
+def stop(project_dir, wait=False):
+    if wait:
+        cmdline = "./stop.sh"
+    else:
+        cmdline = "/usr/bin/nohup ./stop.sh &"
     with NoVenv():
-        cmdline = "/usr/bin/nohup ./stop.sh"
         resp = subprocess.run(cmdline, cwd=project_dir, shell=True)
     return resp
+
 
 def setup_python_project(location, execute=True):
     """
@@ -515,7 +565,6 @@ def setup_python_project(location, execute=True):
         is_bare_requirements, params = init_requirements_txt_project(setup_py_location)
         found_parameters.update(params)
 
-
     requirements = params.get("requirements", [])
     deploy_params = {
         "is_sanic_app": False,
@@ -529,16 +578,16 @@ def setup_python_project(location, execute=True):
             continue
         r1 = str(r).lstrip(" -!").split("=", 1)[0].split(">", 1)[0].split("<", 1)[0].split("!", 1)[0].split(" ", 1)[0]
         if r1 == "sanic":
-            deploy_params['is_sanic_app'] = True
+            deploy_params["is_sanic_app"] = True
             break
         elif r1 == "tornado":
-            deploy_params['is_tornado_app'] = True
+            deploy_params["is_tornado_app"] = True
             break
         elif r1 == "flask":
-            deploy_params['is_flask_app'] = True
+            deploy_params["is_flask_app"] = True
             break
 
-    if not any({deploy_params['is_flask_app'], deploy_params['is_sanic_app'], deploy_params['is_tornado_app']}):
+    if not any({deploy_params["is_flask_app"], deploy_params["is_sanic_app"], deploy_params["is_tornado_app"]}):
         pass  # assume its a generic wsgi-compatible app
 
     venv = params.get("venv", None)
@@ -548,14 +597,12 @@ def setup_python_project(location, execute=True):
     elif is_setup_py_prj and venv:
         resp = install_setup_py_project(location, venv)
     elif is_bare_requirements and venv:
-        resp = install_requirements_txt(path.join(location, "requirements.txt"), venv)
+        resp = install_requirements_txt(location, path.join(location, "requirements.txt"), venv)
     if venv:
         resp = install_gunicorn(venv)
     make_gunicorn_run(location, venv, **deploy_params)
     if execute:
         launch(location)
-
-
 
 
 if __name__ == "__main__":

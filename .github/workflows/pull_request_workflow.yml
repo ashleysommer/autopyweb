@@ -1,4 +1,4 @@
-name: test-workflow2
+name: self_deploy_workflow
 # This workflow is triggered on pushes to the repository.
 on: [pull_request]
 
@@ -16,7 +16,7 @@ jobs:
         run: |
           pip3 install --user --upgrade "poetry>=1.0.1"
           ~/.local/bin/poetry install
-          ~/.local/bin/poetry run pytest tests
+          ~/.local/bin/poetry run pytest test
   do_dynamic_deploy_js:
     runs-on: ubuntu-latest
     needs: do_tests
@@ -24,14 +24,7 @@ jobs:
       # This step checks out a copy of your repository.
       - uses: actions/checkout@v1
       # This step references the directory that contains the action.
-      - uses: ./.github/actions/action_dynamic_deploy_js
+      - uses: ashleysommer/autopyweb-actions/action_dynamic_deploy
         with:
-          dynamic_deploy_endpoint: ${{ secrets.monitor_endpoint }}
-
-#  do_dynamic_deploy1:
-#    runs-on: ubuntu-latest
-#    steps:
-#      # This step checks out a copy of your repository.
-#      - uses: actions/checkout@v1
-#      # This step references the directory that contains the action.
-#      - uses: ./.github/actions/action_dynamic_deploy1
+          dynamic_deploy_endpoint: ${{ secrets.autopyweb_endpoint }}
+          prevent_from_forks: true

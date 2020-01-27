@@ -8,3 +8,6 @@ container_res/
 __pycache__
 .github/actions/*/node_modules/
 !.github/actions/*/dist/
+.mypy_cache/
+.pytest_cache/
+.coverage

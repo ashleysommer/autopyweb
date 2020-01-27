@@ -7,4 +7,4 @@ worker_class = "sanic.worker.GunicornWorker"
 pid = "./gunicorn.pid"
 keepalive = 5
 timeout = 320
-app_module = "monitor.app:app"
+app_module = "autopyweb.app:app"

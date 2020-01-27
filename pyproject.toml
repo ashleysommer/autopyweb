@@ -3,16 +3,47 @@ requires = ["poetry>=1.0.2"]
 build-backend = "poetry.masonry.api"
 
 [tool.poetry]
-name = "dynamic.monitor"
+name = "AutoPyWeb"
 description = ""
-version = "0.0.1"
-authors = ["Ashley Sommer <Ashley.Sommer@csiro.au>"]
+version = "0.1.0"
+authors = ["Ashley Sommer <Ashley.Sommer@csiro.au>", "Ashley Sommer <ashleysommer@gmail.com>"]
 
 [tool.poetry.dependencies]
 python = "^3.6"
 python-dotenv = "~0.10.5"
 GitPython = "~3.0"
-sanic = "==19.6.3"
+sanic = "~19.6.3"
 
 [tool.poetry.dev-dependencies]
 pytest = "~5.2.0"
+coverage = "^4.5"
+pytest-cov = "^2.8.1"
+flake8 = { version="^3.7", optional=true}
+black = { version=">=19.3b0", python=">=3.6", optional=true}
+mypy = { version="^0.730.0", python=">=3.6", optional=true}
+
+[tool.poetry.extras]
+dev-lint = ["black", "flake8"]
+dev-type-checking = ["mypy"]
+
+[tool.black]
+line-length = "119"
+target-version = ['py36']
+include = '\.pyi?$'
+exclude = '''
+(
+  /(
+      \.eggs         # exclude a few common directories in the
+    | \.git          # root of the project
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | buck-out
+    | build
+    | dist
+    | venv
+  )/
+)
+'''
