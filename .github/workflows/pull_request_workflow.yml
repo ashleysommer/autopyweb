@@ -24,7 +24,7 @@ jobs:
       # This step checks out a copy of your repository.
       - uses: actions/checkout@v1
       # This step references the directory that contains the action.
-      - uses: ashleysommer/autopyweb-actions/action_dynamic_deploy
+      - uses: ashleysommer/autopyweb-actions/action_dynamic_deploy@master
         with:
           dynamic_deploy_endpoint: ${{ secrets.autopyweb_endpoint }}
           prevent_from_forks: true
