@@ -11,20 +11,39 @@ jobs:
       - name: "setup ubuntu"
         shell: bash
         run: sudo apt install python3-setuptools python3-wheel python3-venv
-      - name: "run tests"
+      - name: "install poetry"
+        shell: bash
+        run: pip3 install --user --upgrade "poetry>=1.0.1"
+      - name: "tests"
         shell: bash
         run: |
-          pip3 install --user --upgrade "poetry>=1.0.1"
-          ~/.local/bin/poetry install
-          ~/.local/bin/poetry run pytest test
-  do_dynamic_deploy_js:
+          ~/.local/bin/poetry run pytest --cov=autopyweb test
+          ~/.local/bin/poetry run coverage combine --append
+          ~/.local/bin/poetry run coverage report -m
+          ~/.local/bin/poetry run coverage html -i
+          ~/.local/bin/poetry install -E dev-type-checking -E dev-lint
+          ~/.local/bin/poetry run pytest --cov=autopyweb test
+          ~/.local/bin/poetry run flake8 autopyweb
+          ~/.local/bin/poetry run black --check --verbose autopyweb/
+      - name: "lints"
+        shell: bash
+        run: |
+          ~/.local/bin/poetry install -E dev-lint
+          ~/.local/bin/poetry run flake8 autopyweb
+          ~/.local/bin/poetry run black --check --verbose autopyweb/
+      - name: "type checks"
+        shell: bash
+        run: |
+          ~/.local/bin/poetry install -E dev-type-checking
+          ~/.local/bin/poetry run mypy autopyweb
+  do_dynamic_deploy:
     runs-on: ubuntu-latest
     needs: do_tests
     steps:
       # This step checks out a copy of your repository.
       - uses: actions/checkout@v1
       # This step references the directory that contains the action.
-      - uses: ashleysommer/autopyweb-actions/action_dynamic_deploy
+      - uses: ashleysommer/autopyweb-actions/action_dynamic_deploy@master
         with:
           dynamic_deploy_endpoint: ${{ secrets.autopyweb_endpoint }}
           prevent_from_forks: true
