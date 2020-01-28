@@ -17,14 +17,11 @@ jobs:
       - name: "tests"
         shell: bash
         run: |
+          ~/.local/bin/poetry install
           ~/.local/bin/poetry run pytest --cov=autopyweb test
           ~/.local/bin/poetry run coverage combine --append
           ~/.local/bin/poetry run coverage report -m
           ~/.local/bin/poetry run coverage html -i
-          ~/.local/bin/poetry install -E dev-type-checking -E dev-lint
-          ~/.local/bin/poetry run pytest --cov=autopyweb test
-          ~/.local/bin/poetry run flake8 autopyweb
-          ~/.local/bin/poetry run black --check --verbose autopyweb/
       - name: "lints"
         shell: bash
         run: |
