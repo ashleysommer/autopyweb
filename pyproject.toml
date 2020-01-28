@@ -13,14 +13,17 @@ python = "^3.6"
 python-dotenv = "~0.10.5"
 GitPython = "~3.0"
 sanic = "~19.6.3"
+#These are dev-dependencies, but listed here because they're optional extras
+flake8 = { version="^3.7", optional=true}
+black = { version=">=19.3b0", python=">=3.6", optional=true}
+mypy = { version="^0.730.0", python=">=3.6", optional=true}
 
 [tool.poetry.dev-dependencies]
 pytest = "~5.2.0"
 coverage = "^4.5"
 pytest-cov = "^2.8.1"
-flake8 = { version="^3.7", optional=true}
-black = { version=">=19.3b0", python=">=3.6", optional=true}
-mypy = { version="^0.730.0", python=">=3.6", optional=true}
+pytest-asyncio = "~0.10.0"
+
 
 [tool.poetry.extras]
 dev-lint = ["black", "flake8"]
@@ -28,7 +31,7 @@ dev-type-checking = ["mypy"]
 
 [tool.black]
 line-length = "119"
-target-version = ['py36']
+target-version = ['py35']
 include = '\.pyi?$'
 exclude = '''
 (

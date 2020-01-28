@@ -1,15 +1,12 @@
 # -*- coding: utf-8 -*-
 #
-import sys
 from os import path, environ
 import subprocess
 import os
-from git import Repo
+from git import Repo  # type: ignore
 from shutil import rmtree
 import time
-
-from pkg_resources import working_set
-from setuptools.sandbox import save_pkg_resources_state, save_modules, setup_context, _execfile, DirectorySandbox
+from setuptools.sandbox import save_pkg_resources_state, save_modules  # type: ignore
 
 
 def debug_print(output, *args, **kwargs):
@@ -59,15 +56,33 @@ def guess_project_name(guess_string):
 
 
 def path_friendly(instring):
+    """
+    Turn any string into one which can be used as both a folder name and a subdomain name.
+    :param instring:
+    :type instring: str
+    :return: path friendly string
+    :rtype: str
+    """
     instring = instring.replace("/", "")
     instring = instring.replace("_", "-")
     instring = instring.replace(".", "-")
     return instring
 
 
-def add_git_project(location, origin_url, tag=None, branch=None, commit=None, dirname=None, do_update=False,
-                    **kwargs):
-    project_name = path_friendly(guess_project_name(origin_url))
+def add_git_project(location, origin_url, tag=None, branch=None, commit=None, dirname=None, do_update=False, **kwargs):
+    """
+    TODO: Document
+    :param location:
+    :param origin_url:
+    :param tag:
+    :param branch:
+    :param commit:
+    :param dirname:
+    :param do_update:
+    :param kwargs:
+    :return:
+    """
+    project_name = path_friendly(guess_project_name(origin_url)).lower()
     location = path.abspath(location)
     t = str(int(time.time()))
     bare_location = path.join(location, "bare-{}-{}".format(project_name, t))
@@ -136,8 +151,10 @@ def add_git_project(location, origin_url, tag=None, branch=None, commit=None, di
                 try:
                     os.unlink(linked_repo_path)
                 except Exception as e:
-                    raise RuntimeError("Found a non-removable dangling symlink where we want to place a new "
-                                       "directory link.")
+                    raise RuntimeError(
+                        "Found a non-removable dangling symlink where we want to place a new "
+                        "directory link.\n" + str(e)
+                    )
             elif existing_repo == new_repo_path:
                 # We already have this exact dirname linked to the correct repo!
                 skip_symlink = True
@@ -147,12 +164,14 @@ def add_git_project(location, origin_url, tag=None, branch=None, commit=None, di
                     os.unlink(linked_repo_path)
                 except Exception as e:
                     if path.exists(linked_repo_path):
-                        raise RuntimeError("Cannot update that dirname to new repo because the only link cannot "
-                                           "be removed.\n"+str(e))
+                        raise RuntimeError(
+                            "Cannot update that dirname to new repo because the only link cannot "
+                            "be removed.\n" + str(e)
+                        )
                     # old link is gone, lets continue
                 # Terminate current version
                 try:
-                    resp = stop(existing_repo, wait=True)
+                    _ = stop(existing_repo, wait=True)  # noqa: F841
                 except Exception:
                     # Don't matter, just continue
                     pass
@@ -226,9 +245,9 @@ class InVenv(object):
     def __enter__(self):
         self.old_path = old_path = environ.get("PATH", None)
         self.p = save_pkg_resources_state()
-        pkgs = self.p.__enter__()
+        _ = self.p.__enter__()  # noqa: F841
         self.m = save_modules()
-        modules = self.m.__enter__()
+        _ = self.m.__enter__()  # noqa: F841
         self.e = CleanEnv()
         self.e.__enter__()
         if old_path:
@@ -364,12 +383,14 @@ def install_poetry_project(project_dir, venv_dir):
         resp = subprocess.run("{} install".format(poetry_path), cwd=project_dir, shell=True)
     return resp
 
+
 def init_setup_py_project(file_path):
     if not path.isfile(file_path):
         return False, {}
     project_dir = path.dirname(file_path)
     venv_dir = make_venv(project_dir, venv_name="dynvenv")
     import distutils.core
+
     with InVenv(venv_dir):
         setup = distutils.core.run_setup(file_path)
     requirements = setup.install_requires

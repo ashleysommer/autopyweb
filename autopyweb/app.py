@@ -3,9 +3,9 @@
 import os
 import sys
 from os import path
-from sanic import Sanic
-from sanic.exceptions import SanicException, ServerError
-from sanic.response import text, json
+from sanic import Sanic  # type: ignore
+from sanic.exceptions import SanicException, ServerError  # type: ignore
+from sanic.response import text, json  # type: ignore
 from typing import Optional
 
 if __name__ == "__main__":
@@ -29,16 +29,17 @@ app.config["RESPONSE_TIMEOUT"] = 318  # (two seconds before Gunicorn worker time
 
 TRUTHS = (True, 1, "t", "T", "1", "true", "TRUE", "True")
 
+
 class MissingParameter(SanicException):
     def __init__(self, param):
         message = "InvalidUsage. Missing parameter: {}".format(str(param))
-        super().__init__(message, 400)
+        super(MissingParameter, self).__init__(message, 400)
 
 
 class InvalidParameter(SanicException):
     def __init__(self, param):
         message = "InvalidUsage. Invalid parameter: {}".format(str(param))
-        super().__init__(message, 400)
+        super(InvalidParameter, self).__init__(message, 400)
 
 
 def wrap_exception(exc):
@@ -90,8 +91,13 @@ async def add(request):
         raise InvalidParameter("Cannot have both branch and commit parameters")
     elif all({maybe_commit, maybe_tag}):
         raise InvalidParameter("Cannot have both commit and tag parameters")
-    kwargs = {"tag": maybe_tag, "branch": maybe_branch, "commit": maybe_commit, "dirname": maybe_dirname,
-              "do_update": do_update}
+    kwargs = {
+        "tag": maybe_tag,
+        "branch": maybe_branch,
+        "commit": maybe_commit,
+        "dirname": maybe_dirname,
+        "do_update": do_update,
+    }
     try:
         print("adding git project to filesystem: {}".format(str(origin_endpoint)))
         project_path = add_git_project(path.dirname(os.getcwd()), origin_endpoint, **kwargs)
